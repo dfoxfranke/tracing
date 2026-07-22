@@ -66,27 +66,36 @@ impl<T: Write + Send + 'static> Worker<T> {
         Ok(worker_state)
     }
 
-    /// Creates a worker thread that processes a channel until it's disconnected
-    pub(crate) fn worker_thread(mut self, name: String) -> std::thread::JoinHandle<()> {
-        thread::Builder::new()
-            .name(name)
-            .spawn(move || {
-                loop {
-                    match self.work() {
-                        Ok(WorkerState::Continue) | Ok(WorkerState::Empty) => {}
-                        Ok(WorkerState::Shutdown) | Ok(WorkerState::Disconnected) => {
-                            let _ = self.shutdown.recv();
-                            break;
-                        }
-                        Err(_) => {
-                            // TODO: Expose a metric for IO Errors, or print to stderr
-                        }
+    /// Spawns a worker thread that processes the channel until it is disconnected.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `name` contains a null byte or the operating system
+    /// fails to spawn the worker thread.
+    pub(crate) fn worker_thread(mut self, name: String) -> io::Result<std::thread::JoinHandle<()>> {
+        if name.contains('\0') {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "thread name may not contain null bytes",
+            ));
+        }
+
+        thread::Builder::new().name(name).spawn(move || {
+            loop {
+                match self.work() {
+                    Ok(WorkerState::Continue) | Ok(WorkerState::Empty) => {}
+                    Ok(WorkerState::Shutdown) | Ok(WorkerState::Disconnected) => {
+                        let _ = self.shutdown.recv();
+                        break;
+                    }
+                    Err(_) => {
+                        // TODO: Expose a metric for IO Errors, or print to stderr
                     }
                 }
-                if let Err(e) = self.writer.flush() {
-                    eprintln!("Failed to flush. Error: {}", e);
-                }
-            })
-            .expect("failed to spawn `tracing-appender` non-blocking worker thread")
+            }
+            if let Err(e) = self.writer.flush() {
+                eprintln!("Failed to flush. Error: {}", e);
+            }
+        })
     }
 }

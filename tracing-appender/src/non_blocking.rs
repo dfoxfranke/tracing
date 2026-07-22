@@ -151,26 +151,26 @@ impl NonBlocking {
         buffered_lines_limit: usize,
         is_lossy: bool,
         thread_name: String,
-    ) -> (NonBlocking, WorkerGuard) {
+    ) -> io::Result<(NonBlocking, WorkerGuard)> {
         let (sender, receiver) = bounded(buffered_lines_limit);
 
         let (shutdown_sender, shutdown_receiver) = bounded(0);
 
         let worker = Worker::new(receiver, writer, shutdown_receiver);
         let worker_guard = WorkerGuard::new(
-            worker.worker_thread(thread_name),
+            worker.worker_thread(thread_name)?,
             sender.clone(),
             shutdown_sender,
         );
 
-        (
+        Ok((
             Self {
                 channel: sender,
                 error_counter: ErrorCounter(Arc::new(AtomicUsize::new(0))),
                 is_lossy,
             },
             worker_guard,
-        )
+        ))
     }
 
     /// Returns a counter for the number of times logs where dropped. This will always return zero if
@@ -215,7 +215,34 @@ impl NonBlockingBuilder {
     }
 
     /// Completes the builder, returning the configured `NonBlocking`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the configured buffered-line limit exceeds the maximum
+    /// supported by the underlying channel, the configured thread name
+    /// contains a null byte, or the operating system fails to spawn the worker
+    /// thread. Use [`try_finish`](Self::try_finish) to handle thread-name and
+    /// thread-spawning errors.
     pub fn finish<T: Write + Send + 'static>(self, writer: T) -> (NonBlocking, WorkerGuard) {
+        self.try_finish(writer)
+            .expect("failed to spawn `tracing-appender` non-blocking worker thread")
+    }
+
+    /// Attempts to complete the builder, returning the configured `NonBlocking`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the configured buffered-line limit exceeds the maximum
+    /// supported by the underlying channel.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the configured thread name contains a null byte or
+    /// the operating system fails to spawn the worker thread.
+    pub fn try_finish<T: Write + Send + 'static>(
+        self,
+        writer: T,
+    ) -> io::Result<(NonBlocking, WorkerGuard)> {
         NonBlocking::create(
             writer,
             self.buffered_lines_limit,
@@ -486,5 +513,30 @@ mod test {
 
         assert_eq!(10, hello_count);
         assert_eq!(0, error_count.dropped_lines());
+    }
+
+    #[test]
+    fn try_finish_spawns_worker() {
+        let (_non_blocking, _guard) = NonBlockingBuilder::default()
+            .try_finish(std::io::sink())
+            .expect("worker thread should spawn");
+    }
+
+    #[test]
+    fn invalid_worker_thread_name_is_an_error() {
+        let error = NonBlockingBuilder::default()
+            .thread_name("invalid\0name")
+            .try_finish(std::io::sink())
+            .expect_err("a null byte in the worker thread name should be rejected");
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    #[should_panic(expected = "failed to spawn `tracing-appender` non-blocking worker thread")]
+    fn finish_panics_on_invalid_worker_thread_name() {
+        let _ = NonBlockingBuilder::default()
+            .thread_name("invalid\0name")
+            .finish(std::io::sink());
     }
 }
