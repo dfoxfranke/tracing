@@ -142,6 +142,11 @@ impl NonBlocking {
     ///
     /// [default]: NonBlockingBuilder::default
     /// [builder]: NonBlockingBuilder
+    ///
+    /// # Panics
+    ///
+    /// Panics if the operating system fails to spawn the worker thread. Use
+    /// [`NonBlockingBuilder::try_finish`] to handle this error.
     pub fn new<T: Write + Send + 'static>(writer: T) -> (NonBlocking, WorkerGuard) {
         NonBlockingBuilder::default().finish(writer)
     }

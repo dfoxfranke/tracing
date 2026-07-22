@@ -132,6 +132,12 @@ impl RollingFileAppender {
     ///
     /// Additional parameters can be configured using [`RollingFileAppender::builder`].
     ///
+    /// # Panics
+    ///
+    /// Panics if `filename_prefix` is not valid UTF-8 or if the log directory
+    /// or initial log file cannot be created. Use [`Self::builder`] to handle
+    /// initialization errors.
+    ///
     /// # Examples
     ///
     /// ```rust
@@ -296,6 +302,12 @@ impl fmt::Debug for RollingFileAppender {
 /// ```
 ///
 /// This will result in a log file located at `/some/path/rolling.log.yyyy-MM-dd-HH-mm`.
+///
+/// # Panics
+///
+/// Panics if `file_name_prefix` is not valid UTF-8 or if the log directory or
+/// initial log file cannot be created. Use [`RollingFileAppender::builder`] to
+/// handle initialization errors.
 pub fn minutely(
     directory: impl AsRef<Path>,
     file_name_prefix: impl AsRef<Path>,
@@ -331,6 +343,12 @@ pub fn minutely(
 /// ```
 ///
 /// This will result in a log file located at `/some/path/rolling.log.yyyy-MM-dd-HH`.
+///
+/// # Panics
+///
+/// Panics if `file_name_prefix` is not valid UTF-8 or if the log directory or
+/// initial log file cannot be created. Use [`RollingFileAppender::builder`] to
+/// handle initialization errors.
 pub fn hourly(
     directory: impl AsRef<Path>,
     file_name_prefix: impl AsRef<Path>,
@@ -367,6 +385,12 @@ pub fn hourly(
 /// ```
 ///
 /// This will result in a log file located at `/some/path/rolling.log.yyyy-MM-dd`.
+///
+/// # Panics
+///
+/// Panics if `file_name_prefix` is not valid UTF-8 or if the log directory or
+/// initial log file cannot be created. Use [`RollingFileAppender::builder`] to
+/// handle initialization errors.
 pub fn daily(
     directory: impl AsRef<Path>,
     file_name_prefix: impl AsRef<Path>,
@@ -403,6 +427,12 @@ pub fn daily(
 /// ```
 ///
 /// This will result in a log file located at `/some/path/rolling.log.yyyy-MM-dd`.
+///
+/// # Panics
+///
+/// Panics if `file_name_prefix` is not valid UTF-8 or if the log directory or
+/// initial log file cannot be created. Use [`RollingFileAppender::builder`] to
+/// handle initialization errors.
 pub fn weekly(
     directory: impl AsRef<Path>,
     file_name_prefix: impl AsRef<Path>,
@@ -437,6 +467,12 @@ pub fn weekly(
 /// ```
 ///
 /// This will result in a log file located at `/some/path/non-rolling.log`.
+///
+/// # Panics
+///
+/// Panics if `file_name` is not valid UTF-8 or if the log directory or initial
+/// log file cannot be created. Use [`RollingFileAppender::builder`] to handle
+/// initialization errors.
 pub fn never(directory: impl AsRef<Path>, file_name: impl AsRef<Path>) -> RollingFileAppender {
     RollingFileAppender::new(Rotation::NEVER, directory, file_name)
 }
@@ -509,6 +545,11 @@ impl Rotation {
     pub const NEVER: Self = Self(RotationKind::Never);
 
     /// Determines the next date that we should round to or `None` if `self` uses [`Rotation::NEVER`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if adding the rotation interval to `current_date` exceeds the
+    /// range supported by [`OffsetDateTime`].
     pub(crate) fn next_date(&self, current_date: &OffsetDateTime) -> Option<OffsetDateTime> {
         let unrounded_next_date = match *self {
             Rotation::MINUTELY => *current_date + Duration::minutes(1),
@@ -524,7 +565,9 @@ impl Rotation {
     ///
     /// # Panics
     ///
-    /// This method will panic if `self`` uses [`Rotation::NEVER`].
+    /// Panics if `self` uses [`Rotation::NEVER`], or if rounding a weekly
+    /// rotation would produce a date outside the range supported by
+    /// [`OffsetDateTime`].
     pub(crate) fn round_date(&self, date: OffsetDateTime) -> OffsetDateTime {
         match *self {
             Rotation::MINUTELY => {
@@ -626,6 +669,11 @@ impl Inner {
     }
 
     /// Returns the full filename for the provided date, using [`Rotation`] to round accordingly.
+    ///
+    /// # Panics
+    ///
+    /// Panics if rounding a weekly rotation would produce a date outside the
+    /// range supported by [`OffsetDateTime`].
     pub(crate) fn join_date(&self, date: &OffsetDateTime) -> String {
         let date = if let Rotation::NEVER = self.rotation {
             date.format(&self.date_format)

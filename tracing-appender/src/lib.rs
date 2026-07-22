@@ -192,6 +192,11 @@ pub(crate) mod sync;
 /// });
 /// # }
 /// ```
+///
+/// # Panics
+///
+/// Panics if the operating system fails to spawn the worker thread. Use
+/// [`non_blocking::NonBlockingBuilder::try_finish`] to handle this error.
 pub fn non_blocking<T: Write + Send + 'static>(writer: T) -> (NonBlocking, WorkerGuard) {
     NonBlocking::new(writer)
 }
